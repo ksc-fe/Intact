@@ -4,7 +4,7 @@ import App from './components/app';
 import {Promise} from 'es6-promise';
 import {dispatchEvent, eqlOuterHtml, eqlHtml} from './utils';
 import {each} from '../src/utils';
-import {svgNS} from 'misstime/src/utils';
+import {svgNS, browser} from 'misstime/src/utils';
 
 const sEql = assert.strictEqual;
 const dEql = assert.deepStrictEqual;
@@ -124,6 +124,42 @@ describe('Component Test', function() {
         sEql(destroyBFn.callCount, 0);
     });
 
+    it('update componenent which its nested component has changed dom', () => {
+        const A = Intact.extend({
+            template: `<B ev-hide={self.proxy} />`,
+            _init() {
+                this.B = B;
+            },
+            proxy() {
+                this.trigger('hide');
+            }
+        });
+        const B = Intact.extend({
+            template:`
+                if (self.get('hide')) return;
+                <div ev-click={self.hide}>show</div>
+            `,
+            hide() {
+                this.set('hide', true);
+                this.trigger('hide')
+            }
+        });
+        const C = Intact.extend({
+            template: `<div><A v-if={!self.get('hide')} ev-hide={self.hide}/></div>`,
+            _init() {
+                this.A = A;
+            },
+            hide() {
+                this.set('hide', true);
+            }
+        });
+
+        const i = Intact.mount(C, document.body);
+        dispatchEvent(i.element.firstChild, 'click');
+        eqlOuterHtml(i.element, '<div></div>');
+        // document.body.removeChild(i.element);
+    });
+
     it('update when updating', function() {
         var A = Intact.extend({
             defaults: {
@@ -195,6 +231,81 @@ describe('Component Test', function() {
         sEql(changeData.calledOnce, true);
         a.set('a', 1);
         sEql(changeData.calledTwice, true);
+    });
+
+    it('should add events by array', function() {
+        const A = Intact.extend({
+            template: `<div></div>`,
+        });
+        const fn1 = sinon.spy();
+        const fn2 = sinon.spy();
+        const a = new A({'ev-click': [fn1, fn2]});
+
+        a.trigger('click');
+
+        sEql(fn1.callCount, 1);
+        sEql(fn2.callCount, 1);
+    });
+
+    it('should patch events by array', function() {
+        const fn1 = sinon.spy();
+        const fn2 = sinon.spy();
+        const A = Intact.extend({
+            template: `<div></div>`
+        });
+        const B = Intact.extend({
+            template: `<A ref="a" ev-click={self.get('click1') ? self.fn1 : null} ev-click={self.get('click2') ? self.fn2 : null} />`,
+            defaults() {
+                return {click1: true, click2: true};
+            },
+            _init() {
+                this.A = A;
+                this.fn1 = fn1;
+                this.fn2 = fn2;
+            }
+        });
+
+        const b = new B();
+        b.init();
+
+        b.refs.a.trigger('click');
+        sEql(fn1.callCount, 1);
+        sEql(fn2.callCount, 1);
+
+        b.set('click1', false);
+        b.refs.a.trigger('click');
+        sEql(fn1.callCount, 1);
+        sEql(fn2.callCount, 2);
+
+        b.set({click1: true, click2: false});
+        b.refs.a.trigger('click');
+        sEql(fn1.callCount, 2);
+        sEql(fn2.callCount, 2);
+
+        b.set({click1: false, click2: false});
+        b.refs.a.trigger('click');
+        sEql(fn1.callCount, 2);
+        sEql(fn2.callCount, 2);
+    });
+
+    it('v-model and $change:value property both added', () => {
+        const fn = sinon.spy();
+        const A = Intact.extend({
+            template: `<div></div>`
+        });
+        const B = Intact.extend({
+            template: `<A ref="a" v-model="a" ev-$change:value={self.fn} />`,
+            _init() {
+                this.A = A;
+                this.fn = fn;
+            }
+        });
+        const b = new B();
+        b.init();
+
+        b.refs.a.set('value', 1);
+        sEql(b.get('a'), 1);
+        sEql(fn.callCount, 1);
     });
 
     it('with promise', function(done) {
@@ -310,18 +421,18 @@ describe('Component Test', function() {
                 });
             }
             const Async1 = createAsyncComponent(1, 100);
-            const Async2 = createAsyncComponent(2, 200);
+            const Async2 = createAsyncComponent(2, 300);
 
             app.load(Async1);
             app.load(Async2);
 
             setTimeout(() => {
                 eqlHtml(app.element, '<!--!-->');
-            }, 150);
+            }, 200);
             setTimeout(() => {
                 eqlHtml(app.element, '<a>2</a>');
                 done();
-            }, 300);
+            }, 400);
         });
 
         it('should destroy async component correctly', function(done) {
@@ -529,66 +640,96 @@ describe('Component Test', function() {
         sEql(new C().toString(), '<div>1<!---->2</div>');
     });
 
-    it('hydrate', () => {
-        const div = document.createElement('div');
-        document.body.appendChild(div);
-        const C = Intact.extend({
-            template: `<div ev-click={self.add.bind(self)}>{self.get('count')}</div>`,
-            defaults() {
-                return {count: 1};
-            },
-            add() {
-                this.set('count', this.get('count') + 1);
-            }
-        });
+    describe('Hydrate', () => {
+        it('hydrate', () => {
+            const div = document.createElement('div');
+            document.body.appendChild(div);
+            const C = Intact.extend({
+                template: `<div ev-click={self.add.bind(self)}>{self.get('count')}</div>`,
+                defaults() {
+                    return {count: 1};
+                },
+                add() {
+                    this.set('count', this.get('count') + 1);
+                }
+            });
 
-        const c = new C();
-        div.innerHTML = c.toString();
-        eqlHtml(div, `<div>1</div>`);
-        Intact.hydrate(C, div);
-        eqlHtml(div, `<div>1</div>`);
-        dispatchEvent(div.firstChild, 'click');
-        eqlHtml(div, `<div>2</div>`);
-        document.body.removeChild(div);
-    });
-
-    it('hydrate async component', (done) => {
-        const div = document.createElement('div');
-        document.body.appendChild(div);
-        const C = Intact.extend({
-            template: `<D />`,
-            _init() {
-                this.D = D;
-            }
-        });
-        const D = Intact.extend({
-            template: `<div ev-click={self.add.bind(self)}>{self.get('count')}</div>`,
-            defaults() {
-                return {count: 1};
-            },
-            _init() {
-                return new Promise(resolve => {
-                    setTimeout(resolve, 50);
-                });
-            },
-            add() {
-                this.set('count', this.get('count') + 1);
-            }
-        });
-
-        div.innerHTML = '<div>0</div>';
-        Intact.hydrate(C, div);
-        eqlHtml(div, '<div>0</div>');
-        setTimeout(() => {
-            eqlHtml(div, '<div>1</div>');
+            const c = new C();
+            div.innerHTML = c.toString();
+            eqlHtml(div, `<div>1</div>`);
+            Intact.hydrate(C, div);
+            eqlHtml(div, `<div>1</div>`);
             dispatchEvent(div.firstChild, 'click');
-            eqlHtml(div, '<div>2</div>');
+            eqlHtml(div, `<div>2</div>`);
             document.body.removeChild(div);
-            done();
-        }, 100);
+        });
+
+        it('lifecycle', () => {
+            const div = document.createElement('div');
+            document.body.appendChild(div);
+            const C = Intact.extend({
+                template: `<div>{self.get('count')}</div>`,
+                defaults() {
+                    return {count: 1};
+                }
+            });
+
+            const methods = [
+                '_init', '_beforeCreate', '_create',
+                '_mount', '_beforeUpdate', '_update', '_destroy'
+            ];
+            for (let i in methods) {
+                C.prototype[methods[i]] = sinon.spy();
+            }
+
+            Intact.hydrate(C, div);
+            const counts = [1, 1, 1, 1, 0, 0, 0];
+            for (let i in counts) {
+                sEql(C.prototype[methods[i]].callCount, counts[i]);
+            }
+            document.body.removeChild(div);
+        });
+
+        it('hydrate async component', (done) => {
+            const div = document.createElement('div');
+            document.body.appendChild(div);
+            const C = Intact.extend({
+                template: `<D />`,
+                _init() {
+                    this.D = D;
+                }
+            });
+            const D = Intact.extend({
+                template: `<div ev-click={self.add.bind(self)}>{self.get('count')}</div>`,
+                defaults() {
+                    return {count: 1};
+                },
+                _init() {
+                    return new Promise(resolve => {
+                        setTimeout(resolve, 50);
+                    });
+                },
+                add() {
+                    this.set('count', this.get('count') + 1);
+                }
+            });
+
+            div.innerHTML = '<div>0</div>';
+            Intact.hydrate(C, div);
+            eqlHtml(div, '<div>0</div>');
+            setTimeout(() => {
+                eqlHtml(div, '<div>1</div>');
+                dispatchEvent(div.firstChild, 'click');
+                eqlHtml(div, '<div>2</div>');
+                document.body.removeChild(div);
+                done();
+            }, 200);
+        });
     });
 
     describe('SVG', () => {
+        if (browser.isIE8) return;
+        
         let container;
 
         beforeEach(() => {
@@ -650,5 +791,302 @@ describe('Component Test', function() {
             sEql(container.firstChild.firstChild.namespaceURI, svgNS);
             sEql(container.firstChild.firstChild.tagName.toLowerCase(), 'circle');
         });
+    });
+
+    it('should reset to default value when prop in lastProps but not in nextProps', () => {
+        const C = Intact.extend({
+            template: `<div>{self.get('value')}</div>`,
+            defaults() {
+                return {
+                    value: 'default'
+                }
+            }
+        });
+        const D = Intact.extend({
+            template: `var C = self.C;
+                <div>{self.get('a')}<C value="a" /><C /></div>
+            `,
+            defaults() {
+                this.C = C;
+                return {
+                    a: 'test'
+                }
+            }
+        });
+        const d = Intact.mount(D, document.body);
+        d.set('a', undefined);
+        eqlHtml(d.element, '<div>a</div><div>default</div>', '<div>a</div>\r\n<div>default</div>');
+        document.body.removeChild(d.element);
+    });
+
+    it('should update when destroying', () => {
+        const C = Intact.extend({
+            template: `<p>{self.get('value')}</p>`
+        });
+
+        const D = Intact.extend({
+            template: `var C = self.C;
+                <div>{self.get('value')}<C value={self.get('value')} key="c" /></div>
+            `,
+            _init() {
+                this.C = C;
+            },
+            _destroy() {
+                // update child component
+                this.set('value', 1);
+                eqlOuterHtml(d.element, '<div>1<p>1</p></div>', '<div>1\r\n<p>1</p></div>');
+            }
+        });
+
+        const d = Intact.mount(D, document.body);
+        d.destroy();
+        // should no update when destroyed
+        d.set('value', 2);
+        eqlOuterHtml(d.element, '<div>1<p>1</p></div>', '<div>1\r\n<p>1</p></div>');
+        document.body.removeChild(d.element);
+    });
+
+    it('should destroy when patch component with element or component', () => {
+        const bDestroy = sinon.spy();
+        const dDestroy = sinon.spy();
+        const B = Intact.extend({
+            template: `<div>b</div>`,
+            _destroy: bDestroy
+        });
+        const C = Intact.extend({
+            template: `var B = self.B; <div><B />c</div>`,
+            _init() {
+                this.B = B;
+            },
+            _destroy: dDestroy
+        });
+        const D = Intact.extend({
+            template: `var C = self.C; var B = self.B;
+                <div><C v-if={self.get('show')} /><B v-else /></div>
+            `,
+
+            defaults() {
+                return {show: true};
+            },
+
+            _init() {
+                this.C = C;
+                this.B = B;
+            }
+        });
+        const E = Intact.extend({
+            template: `var C = self.C;
+                <div><C v-if={self.get('show')} /><div v-else>d</div></div>
+            `,
+
+            defaults() {
+                return {show: true};
+            },
+
+            _init() {
+                this.C = C;
+            }
+        });
+
+        const d = Intact.mount(D, document.body);
+        d.set('show', false);
+        sEql(bDestroy.callCount, 1);
+        sEql(dDestroy.callCount, 1);
+        document.body.removeChild(d.element);
+
+        const e = Intact.mount(E, document.body);
+        e.set('show', false);
+        sEql(bDestroy.callCount, 2);
+        sEql(dDestroy.callCount, 2);
+        document.body.removeChild(e.element);
+    });
+
+    describe('<b:block>', () => {
+        let C;
+        let d;
+        beforeEach(() => {
+            C = Intact.extend({
+                template: `<div><b:test>aa</b:test><b:body></b:body></div>`
+            });
+        });
+
+        afterEach(() => {
+            document.body.removeChild(d.element);
+        });
+
+        function render(template) {
+            const D = Intact.extend({
+                template: `var C = self.C; ${template}`,
+                _init() { this.C = C; }
+            });
+            d = Intact.mount(D, document.body);
+        }
+
+        it('render one block', () => {
+            render('<C><b:test>cc</b:test></C>');
+            eqlOuterHtml(d.element, '<div>cc</div>', '<div>cc</div>');
+        });
+
+        it('render multiple blocks', () => {
+            render('<C><b:test>c1</b:test><b:body>c2</b:body></C>');
+            sEql(d.element.innerHTML, 'c1c2');
+        });
+
+        it('redundant block should not be rendered', () => {
+            render('<C><b:test>c1</b:test><b:body>c2</b:body><b:aa>aa</b:aa></C>');
+            sEql(d.element.innerHTML, 'c1c2');
+        });
+
+        it('render parent', () => {
+            render('<C><b:test>{parent()}child</b:test></C>');
+            sEql(d.element.innerHTML, 'aachild');
+        });
+
+        it('block extendable', () => {
+            const CC = C.extend({
+                template: `<t:parent><b:body>cc</b:body></t:parent>`
+            });
+            const D = Intact.extend({
+                template: `var CC = self.CC; <CC><b:test>{parent()}child</b:test></CC>`,
+                _init() { this.CC = CC; }
+            });
+            d = Intact.mount(D, document.body);
+            sEql(d.element.innerHTML, 'aachildcc');
+        });
+
+        it('block with v-if=true directive', () => {
+            render('<C><b:test v-if={true}>c1</b:test></C>');
+            sEql(d.element.innerHTML, 'c1');
+        });
+
+        it('block with v-if=false directive', () => {
+            render('<C><b:test v-if={false}>c1</b:test></C>');
+            sEql(d.element.innerHTML, 'aa');
+        });
+
+        it('update', () => {
+            render(`<C><b:test>
+                <span v-if={self.get('show')}>show</span>
+                <i v-else>i</i>
+            </b:test></C>`);
+            d.set('show', true);
+            eqlHtml(d.element, '<span>show</span>');
+        });
+
+        it('block in component should not be extendable', () => {
+            const A = Intact.extend({
+                template: `<div><span><b:body /></span>{self.get('children')}</div>`,
+            });
+            const B = Intact.extend({
+                template: `<div><A><b:body>test</b:body></A><b:body /></div>`,
+                _init() { this.A = A; }
+            });
+            const C = Intact.extend({
+                template: `<div><B><b:body>component</b:body></B></div>`,
+                _init() { this.B = B; }
+            });
+            d = Intact.mount(C, document.body);
+            eqlHtml(d.element.innerHTML, '<div><div><span>test</span></div>component</div>');
+        });
+
+        it('block in component which wrapped by template should be extendable', () => {
+            const A = Intact.extend({
+                template: `<div><span><b:body /></span>{self.get('children')}</div>`,
+            });
+            const B = Intact.extend({
+                template: `<div><A><b:body>test</b:body><template><b:body>b</b:body></template></A></div>`,
+                _init() { this.A = A; }
+            });
+            const C = Intact.extend({
+                template: `<div><B><b:body>{parent()}component</b:body></B></div>`,
+                _init() { this.B = B; }
+            });
+
+            d = Intact.mount(C, document.body);
+            eqlHtml(d.element.innerHTML, '<div><div><span>test</span>bcomponent</div></div>');
+        });
+    });
+
+    it('should render when promise.reject in _init', (done) => {
+        // for unknown reason
+        if (browser.isSafari) return done();
+
+        const C = Intact.extend({
+            template: `<div>{self.get('a')}</div>`,
+            _init() {
+                return new Promise((resolve, reject) => {
+                    reject();
+                });
+            }
+        });
+
+        const c = Intact.mount(C, document.body);
+        setTimeout(() => {
+            eqlOuterHtml(c.element, '<div></div>');
+            document.body.removeChild(c.element);
+            done();
+        }, 200);
+    });
+
+    it('should autobind method', done => {
+        const test = sinon.spy();
+        const C = Intact.extend({
+            template: `<div ev-click={self.test}>click</div>`,
+            test: test,
+        });
+
+        const c = Intact.mount(C, document.body);
+        dispatchEvent(c.element, 'click');
+        sEql(test.callCount, 1);
+        sEql(test.calledOn(c), true);
+        document.body.removeChild(c.element);
+
+        const D = C.extend({
+            template: `<div ev-click={self.test}>click</div>`
+        });
+        const d = Intact.mount(D, document.body);
+        dispatchEvent(d.element, 'click');
+        sEql(test.callCount, 2);
+        sEql(test.calledOn(d), true);
+        document.body.removeChild(d.element);
+
+        const test1 = sinon.spy();
+        const D1 = C.extend({
+            test: test1 
+        });
+        const d1 = Intact.mount(D1, document.body);
+        dispatchEvent(d1.element, 'click');
+        sEql(test.callCount, 2);
+        sEql(test1.callCount, 1);
+        document.body.removeChild(d1.element);
+
+        if (!browser.isIE8) {
+            class E extends Intact {
+                @Intact.template()
+                get template() { return `<div ev-click={self.test}>click</div>`; }
+
+                test() {
+                    test.call(this);
+                }
+            }
+
+            const e = Intact.mount(E, document.body);
+            dispatchEvent(e.element, 'click');
+            sEql(test.callCount, 3);
+            sEql(test.calledOn(e), true);
+            document.body.removeChild(e.element);
+
+            class F extends E {
+
+            }
+
+            const f = Intact.mount(F, document.body);
+            dispatchEvent(f.element, 'click');
+            sEql(test.callCount, 4);
+            sEql(test.calledOn(f), true);
+            document.body.removeChild(f.element);
+        }
+
+        done();
     });
 });

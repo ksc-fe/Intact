@@ -8,10 +8,12 @@ module.exports = function(config) {
             'test/**/*.js': ['webpack'],
         },
         webpack: {
+            devtool: 'inline-source-map',
             module: {
                 rules: [
                     {
                         test: /\.js$/,
+                        // exclude: [/node_modules(?!([\/\\]vdt)|([\/\\]misstime))/],
                         loader: 'babel-loader',
 
                         // use: {
@@ -30,6 +32,9 @@ module.exports = function(config) {
                         loader: 'vdt-loader?skipWhitespace'
                     }
                 ]
+            },
+            resolve: {
+                mainFields: ['module', 'browser', 'main']
             }
         },
         frameworks: [
@@ -47,6 +52,7 @@ module.exports = function(config) {
                 reporter: 'html'
             }
         },
+        concurrency: 2,
         singleRun: true,
         reporters: ['progress', 'coverage-istanbul'],
     });
@@ -58,6 +64,7 @@ module.exports.files = [
     'node_modules/sinon/pkg/sinon.js',
     'test/simpleTest.js',
     'test/componentTest.js',
+    'test/lifecycle.js',
     'test/animateTest.js',
 ];
 

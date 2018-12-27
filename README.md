@@ -1,6 +1,6 @@
 <p align="center">
-    <a href="https://saucelabs.com/u/Intactjs">
-        <img src="https://saucelabs.com/buildstatus/Intactjs?saucy" alt="Build Status">
+    <a href="https://travis-ci.org/Javey/Intact">
+        <img src="https://travis-ci.org/Javey/Intact.svg?branch=master" alt="Build Status">
     </a>
     <br />
     <a href="https://saucelabs.com/u/Intactjs">
@@ -10,13 +10,15 @@
 
 # Intact
 
-[文档 Documents](http://javey.github.io/intact/#/document/start)
+[文档 Documents](http://javey.github.io/Intact/#/document/start)
 
 ## 简介
 
-Intact是一个数据驱动构建用户界面的前端框架。设计的初衷是为了解决现有框架中在构建单页面应用时，
-必须依靠嵌套路由来实现复杂的页面结构的问题。组件继承 是该框架最大的特色，同时强大的组件异步渲
-染机制，极大地提高了组件的灵活性。
+Intact作为一个可继承，并且拥有强逻辑模板的前端MVVM框架，有着如下特色：
+
+1. 充分利用组合与继承的思想，来最高限度地复用代码
+2. 同时支持数据驱动和组件实例化调用，来最便捷地实现功能
+3. 强逻辑模板，赋予模板更多功能和职责，来完成业务逻辑和表现逻辑分离
 
 ## 安装
 

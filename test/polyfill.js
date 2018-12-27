@@ -1,20 +1,28 @@
-import {keys, create, each} from '../src/utils';
-import a from 'core-js/es5';
+import {extend} from '../src/utils';
+import 'core-js/es5';
 
-// if (!Object.keys) {
-    // Object.keys = keys;
-// }
+if (!(Object.setPrototypeOf || {}.__proto__)) {
+    // ie <= 10 exists getPrototypeOf but not setPrototypeOf
+    let nativeGetPrototypeOf = Object.getPrototypeOf;
 
-// if (!Function.prototype.bind) {
-    // Function.prototype.bind = function(self, ...args) {
-        // const fToBind = this;
-        // return function(..._args) {
-            // return fToBind.apply(self, args.concat(_args));
-        // };
-    // };
-// }
-
-// if (!Array.prototype.forEach) {
-    // Array.prototype.forEach = each;
-// }
-
+    if (typeof nativeGetPrototypeOf !== 'function') {
+        Object.getPrototypeOf = function(object) {
+            // May break if the constructor has been tampered with
+            return object.__proto__ || object.constructor.prototype;;
+        }
+    } else {
+        Object.getPrototypeOf = function(object) {
+            // in ie <= 10 __proto__ is not supported
+            // getPrototypeOf will return a native function
+            // but babel will set __proto__ prototyp to target
+            // so we get __proto__ in this case
+            return object.__proto__ || nativeGetPrototypeOf.call(Object, object);
+        }
+    }
+    
+    // fix that if ie <= 10 babel can't inherit class static methods
+    Object.setPrototypeOf = function(O, proto) {
+        extend(O, proto);
+        O.__proto__ = proto;
+    }
+}
